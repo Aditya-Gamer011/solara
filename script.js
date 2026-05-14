@@ -1,9 +1,10 @@
-const API_URL = '/api/chat';
+const DEFAULT_API_PATH = '/api/chat';
 
 let conversations = JSON.parse(localStorage.getItem('conversations') || '{}');
 let currentConversationId = null;
 let apiKey = localStorage.getItem('hackclubApiKey') || '';
 let settings = JSON.parse(localStorage.getItem('chatSettings') || 'null') || {
+  backendUrl: '',
   systemPrompt: 'You are a helpful, friendly assistant.',
   contextPrompt: '',
   temperature: 0.7,
@@ -19,6 +20,7 @@ const elements = {
   welcomeScreen: document.getElementById('welcomeScreen'),
   apiKeyInput: document.getElementById('apiKeyInput'),
   settingsApiKey: document.getElementById('settingsApiKey'),
+  backendUrl: document.getElementById('backendUrl'),
   saveApiKeyBtn: document.getElementById('saveApiKeyBtn'),
   clearApiKeyBtn: document.getElementById('clearApiKeyBtn'),
   apiKeyStatus: document.getElementById('apiKeyStatus'),
@@ -62,6 +64,10 @@ function init() {
 
   if (window.location.protocol === 'file:') {
     showToast('Open the app through http://localhost:3000 after running node server.js', 'error');
+  }
+
+  if (isGitHubPages() && !normalizeBackendUrl(settings.backendUrl)) {
+    showToast('GitHub Pages cannot run /api/chat. Add a backend URL in Settings.', 'warning');
   }
 
   const lastConversationId = localStorage.getItem('lastConversationId');
@@ -168,6 +174,12 @@ async function sendMessage() {
     return;
   }
 
+  if (!getApiUrl()) {
+    showToast(getHostingHelpMessage(), 'error');
+    toggleModal(true);
+    return;
+  }
+
   if (!hasApiKey()) {
     showToast('Add your Hack Club API key to start chatting.', 'warning');
     elements.apiKeyInput.focus();
@@ -260,7 +272,7 @@ function buildMessages() {
 }
 
 async function streamResponse(model, messages, typingDiv) {
-  const response = await fetch(API_URL, {
+  const response = await fetch(getApiUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -342,7 +354,7 @@ async function streamResponse(model, messages, typingDiv) {
 }
 
 async function fetchResponse(model, messages, typingDiv) {
-  const response = await fetch(API_URL, {
+  const response = await fetch(getApiUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -551,6 +563,7 @@ function exportChat() {
 
 function loadSettings() {
   elements.settingsApiKey.value = apiKey;
+  elements.backendUrl.value = settings.backendUrl || '';
   elements.systemPrompt.value = settings.systemPrompt;
   elements.contextPrompt.value = settings.contextPrompt || '';
   elements.temperature.value = settings.temperature;
@@ -571,6 +584,7 @@ function saveSettingsHandler() {
   }
 
   settings.systemPrompt = elements.systemPrompt.value;
+  settings.backendUrl = normalizeBackendUrl(elements.backendUrl.value);
   settings.contextPrompt = elements.contextPrompt.value;
   settings.temperature = parseFloat(elements.temperature.value);
   settings.maxTokens = parseInt(elements.maxTokens.value, 10);
@@ -585,6 +599,7 @@ function saveSettingsHandler() {
 
 function resetSettingsHandler() {
   settings = {
+    backendUrl: '',
     systemPrompt: 'You are a helpful, friendly assistant.',
     contextPrompt: '',
     temperature: 0.7,
@@ -677,10 +692,13 @@ function updateApiKeyUI() {
 function updateComposerState() {
   const blockedByFileProtocol = window.location.protocol === 'file:';
   const blockedByMissingKey = !hasApiKey();
+  const blockedByMissingBackend = !getApiUrl();
 
-  elements.messageInput.disabled = blockedByFileProtocol || blockedByMissingKey;
+  elements.messageInput.disabled = blockedByFileProtocol || blockedByMissingKey || blockedByMissingBackend;
   elements.messageInput.placeholder = blockedByFileProtocol
     ? 'Open the app from http://localhost:3000'
+    : blockedByMissingBackend
+      ? 'Add a backend URL in Settings for static hosting'
     : blockedByMissingKey
       ? 'Add your Hack Club API key to begin'
       : 'Type your message...';
@@ -688,6 +706,7 @@ function updateComposerState() {
   elements.sendBtn.disabled =
     blockedByFileProtocol ||
     blockedByMissingKey ||
+    blockedByMissingBackend ||
     isGenerating ||
     elements.messageInput.value.trim().length === 0;
 }
@@ -751,6 +770,10 @@ function saveConversations() {
 async function parseApiError(response) {
   const fallback = `HTTP error! status: ${response.status}`;
 
+  if (response.status === 405 && isGitHubPages() && !normalizeBackendUrl(settings.backendUrl)) {
+    return getHostingHelpMessage();
+  }
+
   try {
     const data = await response.clone().json();
     const message = data?.error?.message || data?.message || data?.detail;
@@ -763,4 +786,29 @@ async function parseApiError(response) {
       return fallback;
     }
   }
+}
+
+function getApiUrl() {
+  const backendUrl = normalizeBackendUrl(settings.backendUrl);
+  if (backendUrl) {
+    return `${backendUrl}${DEFAULT_API_PATH}`;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return DEFAULT_API_PATH;
+  }
+
+  return '';
+}
+
+function normalizeBackendUrl(value) {
+  return (value || '').trim().replace(/\/+$/, '');
+}
+
+function isGitHubPages() {
+  return window.location.hostname.endsWith('github.io');
+}
+
+function getHostingHelpMessage() {
+  return 'GitHub Pages is static hosting, so it cannot handle POST /api/chat. Run this app locally with node server.js or deploy server.js somewhere and add that backend URL in Settings.';
 }

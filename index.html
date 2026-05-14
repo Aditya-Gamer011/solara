@@ -158,6 +158,11 @@
           <p class="setting-hint">Stored in this browser and used for every chat request from this device.</p>
         </div>
         <div class="setting-group">
+          <label for="backendUrl">Backend URL</label>
+          <input type="url" id="backendUrl" placeholder="https://your-backend.example.com">
+          <p class="setting-hint">Leave blank on localhost. GitHub Pages needs a separate backend that exposes <code>/api/chat</code>.</p>
+        </div>
+        <div class="setting-group">
           <label for="systemPrompt">System Prompt</label>
           <textarea id="systemPrompt" rows="4" placeholder="You are a helpful assistant..."></textarea>
         </div>
